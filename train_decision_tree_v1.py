@@ -18,6 +18,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from sklearn.compose import ColumnTransformer
 from sklearn.metrics import (
     accuracy_score,
@@ -343,6 +344,102 @@ def company_holdout(frame: pd.DataFrame, params: dict) -> dict:
     }
 
 
+def credit_decision(model: Pipeline, company: dict) -> str:
+    """Return a credit action for one company's public-record features."""
+    row = pd.DataFrame([company])
+    predicted = str(model.predict(row)[0])
+    if predicted == "active":
+        return f"Offer 60-day terms (model predicts: {predicted})"
+    return f"Ask for payment upfront (model predicts: {predicted})"
+
+
+def value_of_model(
+    cm: list[list[int]], loss: float = 9000, churn_cost: float = 0.30 * 15000
+) -> dict:
+    """Estimate baseline and model costs from the test confusion matrix.
+
+    Assumes insolvency and compulsory strike-off cause bad debt, while
+    voluntary closures cause no bad debt. A false alarm costs the share of
+    annual gross profit lost when a healthy customer walks away.
+    """
+    loss_rows = [1, 2]
+    flagged_cols = [1, 2, 3]
+    n_loss = sum(sum(cm[row]) for row in loss_rows)
+    caught = sum(cm[row][col] for row in loss_rows for col in flagged_cols)
+    false_alarms = sum(cm[row][col] for row in [0, 3] for col in flagged_cols)
+    missed = n_loss - caught
+    n_customers = sum(map(sum, cm))
+    baseline_cost = n_loss * loss
+    model_cost = missed * loss + false_alarms * churn_cost
+    return {
+        "assumptions": {
+            "loss_per_bad_debt_customer_gbp": loss,
+            "annual_gross_profit_per_customer_gbp": 15000,
+            "walkaway_share_assumed": churn_cost / 15000,
+            "false_alarm_cost_gbp": churn_cost,
+            "voluntary_closures_cause_bad_debt": False,
+        },
+        "n_customers": n_customers,
+        "customers_causing_loss": n_loss,
+        "losses_caught": caught,
+        "losses_missed": missed,
+        "false_alarms": false_alarms,
+        "baseline_cost_gbp": baseline_cost,
+        "model_cost_gbp": model_cost,
+        "saving_gbp": baseline_cost - model_cost,
+        "baseline_cost_per_customer_gbp": baseline_cost / n_customers,
+        "model_cost_per_customer_gbp": model_cost / n_customers,
+        "saving_per_customer_gbp": (baseline_cost - model_cost) / n_customers,
+        "break_even_walkaway_share": (
+            caught * loss / (false_alarms * 15000) if false_alarms else None
+        ),
+    }
+
+
+def plot_baseline_vs_v1(results: dict, path: Path) -> None:
+    """Create the editable-source performance chart from computed metrics."""
+    baseline = results["baseline_test"]
+    model = results["v1_test"]
+    labels = [
+        "Accuracy\n(4 outcomes)",
+        "Flagged non-active\noutcomes that were\ncorrect (precision)",
+        "Non-active outcomes\ncaught (recall)",
+    ]
+    baseline_values = [
+        baseline["accuracy"] * 100,
+        baseline["not_active"]["precision"] * 100,
+        baseline["not_active"]["recall"] * 100,
+    ]
+    model_values = [
+        model["accuracy"] * 100,
+        model["not_active"]["precision"] * 100,
+        model["not_active"]["recall"] * 100,
+    ]
+    x = np.arange(len(labels))
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.bar(x - 0.2, baseline_values, width=0.4, label="Baseline: give everyone 60-day terms", color="#9aa0a6")
+    ax.bar(x + 0.2, model_values, width=0.4, label="Model v1", color="#d93025")
+    baseline_flagged = sum(
+        sum(row[column] for column in [1, 2, 3])
+        for row in baseline["confusion_matrix"]
+    )
+    for i, (base, fitted) in enumerate(zip(baseline_values, model_values)):
+        if i == 1 and baseline_flagged == 0:
+            ax.text(i - 0.2, 2, "N/A", ha="center")
+        else:
+            ax.text(i - 0.2, base + 1, f"{base:.0f}%", ha="center")
+        ax.text(i + 0.2, fitted + 1, f"{fitted:.0f}%", ha="center")
+    ax.set_xticks(x, labels)
+    ax.set_ylabel("Metric score (%)")
+    ax.set_ylim(0, 100)
+    ax.legend(frameon=False, loc="upper right")
+    ax.set_title("Baseline vs v1 on the test rows")
+    fig.tight_layout()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=200)
+    plt.close(fig)
+
+
 def main() -> None:
     frame = load_frame(DATA_ZIP)
     features = frame[NUMERIC + CATEGORICAL]
@@ -373,6 +470,50 @@ def main() -> None:
 
     chosen = {
         key.removeprefix("tree__"): value for key, value in search.best_params_.items()
+    }
+    new_customer = {
+        "age_years": 3.1,
+        "accounts_filings": 2,
+        "avg_days_late_accounts": 45.0,
+        "max_days_late_accounts": 90.0,
+        "days_since_last_accounts": 400,
+        "directors_active": 1,
+        "director_resignations_12m": 1,
+        "director_appointments_12m": 0,
+        "address_changes": 2,
+        "strike_off_warnings": 1,
+        "charges_created": 1,
+        "charges_outstanding": 1,
+        "filings_total": 12,
+        "n_sic_codes": 1,
+        "sic_1": "56101",
+        "sic_2": "none",
+        "sic_3": "none",
+        "sic_4": "none",
+        "jurisdiction": "england-wales",
+        "last_accounts_type": "micro-entity",
+    }
+    flagged_customer = {
+        "age_years": 12.0,
+        "accounts_filings": 9,
+        "avg_days_late_accounts": 30.0,
+        "max_days_late_accounts": 90.0,
+        "days_since_last_accounts": 400,
+        "directors_active": 2,
+        "director_resignations_12m": 0,
+        "director_appointments_12m": 1,
+        "address_changes": 0,
+        "strike_off_warnings": 0,
+        "charges_created": 0,
+        "charges_outstanding": 0,
+        "filings_total": 25,
+        "n_sic_codes": 1,
+        "sic_1": "56101",
+        "sic_2": "none",
+        "sic_3": "none",
+        "sic_4": "none",
+        "jurisdiction": "england-wales",
+        "last_accounts_type": "total-exemption-full",
     }
     results = {
         "n_rows": int(len(frame)),
@@ -413,13 +554,45 @@ def main() -> None:
         "baseline_test": score_block(y_test, baseline_pred),
         "v1_train": score_block(y_train, train_pred),
         "v1_test": score_block(y_test, test_pred),
+        "binary_confusion_matrix": {
+            "definition": "Actual/predicted active versus not active; all three non-active outcomes are grouped together.",
+            "labels": ["active", "not_active"],
+            "matrix": [
+                [
+                    int(results_value)
+                    for results_value in [
+                        confusion_matrix(y_test, test_pred, labels=LABELS)[0, 0],
+                        confusion_matrix(y_test, test_pred, labels=LABELS)[0, 1:].sum(),
+                    ]
+                ],
+                [
+                    int(results_value)
+                    for results_value in [
+                        confusion_matrix(y_test, test_pred, labels=LABELS)[1:, 0].sum(),
+                        confusion_matrix(y_test, test_pred, labels=LABELS)[1:, 1:].sum(),
+                    ]
+                ],
+            ],
+            "accuracy": float(accuracy_score((y_test != "active").astype(int), (test_pred != "active").astype(int))),
+        },
         "importance": aggregated_importance(model),
         "tree_text": tree_text,
         "company_holdout": company_holdout(frame, chosen),
     }
+    results["new_customer_example"] = {
+        "input": new_customer,
+        "decision": credit_decision(model, new_customer),
+    }
+    results["flagged_customer_example"] = {
+        "input": flagged_customer,
+        "decision": credit_decision(model, flagged_customer),
+    }
+    results["value_of_model"] = value_of_model(results["v1_test"]["confusion_matrix"])
 
     OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     OUT_PATH.write_text(json.dumps(results, indent=2))
+    chart_path = OUT_PATH.parent / "baseline_vs_v1.png"
+    plot_baseline_vs_v1(results, chart_path)
 
     test = results["v1_test"]
     base = results["baseline_test"]
@@ -444,6 +617,21 @@ def main() -> None:
         f"baseline {base['recall_macro']:.3f}"
     )
     print("not-active precision/recall", test["not_active"])
+    print("new customer decision", results["new_customer_example"]["decision"])
+    print("flagged customer decision", results["flagged_customer_example"]["decision"])
+    print("binary confusion matrix", results["binary_confusion_matrix"]["matrix"])
+    print(f"binary accuracy {results['binary_confusion_matrix']['accuracy']:.3f}")
+    value = results["value_of_model"]
+    print(
+        f"value assumptions: baseline £{value['baseline_cost_gbp']:,.0f} | "
+        f"v1 £{value['model_cost_gbp']:,.0f} | "
+        f"saving £{value['saving_gbp']:,.0f} "
+        f"(£{value['saving_per_customer_gbp']:,.0f} per customer)"
+    )
+    print(
+        "break-even share of flagged customers who walk away "
+        f"{value['break_even_walkaway_share']:.1%}"
+    )
     print("confusion (rows true, cols pred)", LABELS)
     for row in test["confusion_matrix"]:
         print(row)
@@ -456,6 +644,7 @@ def main() -> None:
         f"macro F1 {holdout['v1_test']['f1_macro']:.3f}"
     )
     print(f"wrote {OUT_PATH}")
+    print(f"wrote {chart_path}")
 
 
 if __name__ == "__main__":

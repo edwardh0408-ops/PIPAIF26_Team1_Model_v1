@@ -249,6 +249,24 @@
       "positives": 93
     }
   },
+  "binary_confusion_matrix": {
+    "definition": "Actual/predicted active versus not active; all three non-active outcomes are grouped together.",
+    "labels": [
+      "active",
+      "not_active"
+    ],
+    "matrix": [
+      [
+        104,
+        28
+      ],
+      [
+        38,
+        55
+      ]
+    ],
+    "accuracy": 0.7066666666666667
+  },
   "importance": {
     "by_original_feature": [
       {
@@ -526,5 +544,76 @@
         "positives": 98
       }
     }
+  },
+  "new_customer_example": {
+    "input": {
+      "age_years": 3.1,
+      "accounts_filings": 2,
+      "avg_days_late_accounts": 45.0,
+      "max_days_late_accounts": 90.0,
+      "days_since_last_accounts": 400,
+      "directors_active": 1,
+      "director_resignations_12m": 1,
+      "director_appointments_12m": 0,
+      "address_changes": 2,
+      "strike_off_warnings": 1,
+      "charges_created": 1,
+      "charges_outstanding": 1,
+      "filings_total": 12,
+      "n_sic_codes": 1,
+      "sic_1": "56101",
+      "sic_2": "none",
+      "sic_3": "none",
+      "sic_4": "none",
+      "jurisdiction": "england-wales",
+      "last_accounts_type": "micro-entity"
+    },
+    "decision": "Offer 60-day terms (model predicts: active)"
+  },
+  "flagged_customer_example": {
+    "input": {
+      "age_years": 12.0,
+      "accounts_filings": 9,
+      "avg_days_late_accounts": 30.0,
+      "max_days_late_accounts": 90.0,
+      "days_since_last_accounts": 400,
+      "directors_active": 2,
+      "director_resignations_12m": 0,
+      "director_appointments_12m": 1,
+      "address_changes": 0,
+      "strike_off_warnings": 0,
+      "charges_created": 0,
+      "charges_outstanding": 0,
+      "filings_total": 25,
+      "n_sic_codes": 1,
+      "sic_1": "56101",
+      "sic_2": "none",
+      "sic_3": "none",
+      "sic_4": "none",
+      "jurisdiction": "england-wales",
+      "last_accounts_type": "total-exemption-full"
+    },
+    "decision": "Ask for payment upfront (model predicts: insolvency)"
+  },
+  "value_of_model": {
+    "assumptions": {
+      "loss_per_bad_debt_customer_gbp": 9000,
+      "annual_gross_profit_per_customer_gbp": 15000,
+      "walkaway_share_assumed": 0.3,
+      "false_alarm_cost_gbp": 4500.0,
+      "voluntary_closures_cause_bad_debt": false
+    },
+    "n_customers": 225,
+    "customers_causing_loss": 82,
+    "losses_caught": 51,
+    "losses_missed": 31,
+    "false_alarms": 32,
+    "baseline_cost_gbp": 738000,
+    "model_cost_gbp": 423000.0,
+    "saving_gbp": 315000.0,
+    "baseline_cost_per_customer_gbp": 3280.0,
+    "model_cost_per_customer_gbp": 1880.0,
+    "saving_per_customer_gbp": 1400.0,
+    "break_even_walkaway_share": 0.95625
   }
 }
